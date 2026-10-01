@@ -2,9 +2,10 @@ const chatLog = document.getElementById('chat-log');
 const chatForm = document.getElementById('chat-form');
 const chatInput = document.getElementById('chat-input');
 const ticketForm = document.getElementById('ticket-form');
-const queuedCount = document.getElementById('queued-count');
-const activeCount = document.getElementById('active-count');
-const completedCount = document.getElementById('completed-count');
+const totalQueued = document.getElementById('total-queued');
+const totalActive = document.getElementById('total-active');
+const totalCompleted = document.getElementById('total-completed');
+const servicesList = document.getElementById('services-list');
 
 function addMessage(role, text) {
   const el = document.createElement('div');
@@ -14,16 +15,45 @@ function addMessage(role, text) {
   chatLog.scrollTop = chatLog.scrollHeight;
 }
 
-function renderStats(state = { metrics: { queued: 0, active: 0, completed: 0 } }) {
-  queuedCount.textContent = state.metrics?.queued ?? 0;
-  activeCount.textContent = state.metrics?.active ?? 0;
-  completedCount.textContent = state.metrics?.completed ?? 0;
+function getStateClass(status) {
+  if (status === 'initial') return 'state-initial';
+  if (status === 'processed') return 'state-processed';
+  if (status === 'closed') return 'state-closed';
+  return '';
+}
+
+function renderStats(state = { metrics: { totalQueued: 0, totalActive: 0, totalCompleted: 0, byService: {} } }) {
+  totalQueued.textContent = state.metrics?.totalQueued ?? 0;
+  totalActive.textContent = state.metrics?.totalActive ?? 0;
+  totalCompleted.textContent = state.metrics?.totalCompleted ?? 0;
+
+  servicesList.innerHTML = '';
+  if (state.services && state.metrics.byService) {
+    state.services.forEach((service) => {
+      const metrics = state.metrics.byService[service] || { queued: 0, active: 0 };
+      const div = document.createElement('div');
+      div.className = 'service-item';
+      div.innerHTML = `
+        <div class="service-name">${service}</div>
+        <div class="service-status">
+          <span>En fila: <span class="queue-badge">${metrics.queued}</span></span>
+          <span>Procesando: <span class="queue-badge">${metrics.active}</span></span>
+        </div>
+      `;
+      div.addEventListener('click', () => {
+        chatInput.value = `estado ${service}`;
+        chatInput.focus();
+      });
+      servicesList.appendChild(div);
+    });
+  }
 }
 
 async function fetchState() {
   const res = await fetch('/api/state');
   const state = await res.json();
   renderStats(state);
+  return state;
 }
 
 async function sendChatMessage(message) {
@@ -34,7 +64,7 @@ async function sendChatMessage(message) {
   });
 
   const data = await res.json();
-  renderStats(data.state || { metrics: { queued: 0, active: 0, completed: 0 } });
+  renderStats(data.state);
   addMessage('bot', data.message || 'No hubo respuesta del chatbot.');
 }
 
@@ -42,7 +72,7 @@ async function createTicket(event) {
   event.preventDefault();
   const payload = {
     customerName: document.getElementById('customer-name').value,
-    service: document.getElementById('service-name').value,
+    service: document.getElementById('service-select').value,
     notes: document.getElementById('ticket-notes').value,
   };
 
@@ -62,30 +92,6 @@ async function createTicket(event) {
   }
 }
 
-async function triggerAction(action) {
-  if (action === 'status') {
-    await sendChatMessage('estado');
-    return;
-  }
-
-  if (action === 'next') {
-    const res = await fetch('/api/tickets/next', { method: 'POST' });
-    const data = await res.json();
-    renderStats(data.state || { metrics: { queued: 0, active: 0, completed: 0 } });
-    addMessage('bot', data.message || 'No se pudo atender el siguiente ticket.');
-    return;
-  }
-
-  if (action === 'requeue') {
-    const state = await fetch('/api/state').then((r) => r.json());
-    const id = state.activeTicket?.id ?? 0;
-    const res = await fetch(`/api/tickets/${id}/requeue`, { method: 'POST' });
-    const data = await res.json();
-    renderStats(data.state || { metrics: { queued: 0, active: 0, completed: 0 } });
-    addMessage('bot', data.message || 'No se pudo reencolar.');
-  }
-}
-
 chatForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   const text = chatInput.value.trim();
@@ -97,8 +103,5 @@ chatForm.addEventListener('submit', async (event) => {
 });
 
 ticketForm.addEventListener('submit', createTicket);
-document.querySelectorAll('[data-action]').forEach((button) => {
-  button.addEventListener('click', () => triggerAction(button.dataset.action));
-});
 
 fetchState();

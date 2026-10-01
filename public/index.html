@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>QueueBot</title>
+    <title>QueueBot - Gestión por Servicio</title>
     <link rel="stylesheet" href="/style.css" />
   </head>
   <body>
@@ -13,24 +13,24 @@
           <div class="brand-mark">Q</div>
           <div>
             <h1>QueueBot</h1>
-            <p>Gestión de tickets FIFO</p>
+            <p>Colas por Servicio FIFO</p>
           </div>
         </div>
 
         <div class="panel stats-panel">
-          <h2>Resumen</h2>
+          <h2>Resumen General</h2>
           <div class="stat-grid">
             <div>
               <span>En fila</span>
-              <strong id="queued-count">0</strong>
+              <strong id="total-queued">0</strong>
             </div>
             <div>
-              <span>Activo</span>
-              <strong id="active-count">0</strong>
+              <span>Procesando</span>
+              <strong id="total-active">0</strong>
             </div>
             <div>
-              <span>Completados</span>
-              <strong id="completed-count">0</strong>
+              <span>Cerrados</span>
+              <strong id="total-completed">0</strong>
             </div>
           </div>
         </div>
@@ -44,7 +44,12 @@
             </label>
             <label>
               Servicio
-              <input type="text" id="service-name" placeholder="Ej: Soporte técnico" />
+              <select id="service-select" required>
+                <option value="Consultas generales">Consultas generales</option>
+                <option value="Soporte técnico">Soporte técnico</option>
+                <option value="Facturación">Facturación</option>
+                <option value="Devoluciones">Devoluciones</option>
+              </select>
             </label>
             <label>
               Notas
@@ -54,12 +59,10 @@
           </form>
         </div>
 
-        <div class="panel actions-panel">
-          <h2>Acciones rápidas</h2>
-          <div class="quick-actions">
-            <button type="button" data-action="next">Atender siguiente</button>
-            <button type="button" data-action="status">Ver cola</button>
-            <button type="button" data-action="requeue">Reencolar activo</button>
+        <div class="panel services-panel">
+          <h2>Servicios y Colas</h2>
+          <div id="services-list" class="services-list">
+            <!-- Se completa dinámicamente -->
           </div>
         </div>
       </aside>
@@ -74,7 +77,7 @@
 
         <div id="chat-log" class="chat-log">
           <div class="message bot">
-            <span>Hola, soy el bot de colas FIFO. Puedes pedirme: “nuevo ticket para Ana por soporte”, “siguiente”, “estado”, o “cerrar #12”.</span>
+            <span>Hola, soy el bot de colas por servicio. Ciclo: inicial → procesado → cerrado. Puedes pedirme: "nuevo ticket para Ana por soporte", "siguiente Facturación", "estado Devoluciones", o "cerrar #12".</span>
           </div>
         </div>
 

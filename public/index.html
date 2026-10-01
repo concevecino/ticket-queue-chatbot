@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>QueueBot</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">Q</div>
+          <div>
+            <h1>QueueBot</h1>
+            <p>Gestión de tickets FIFO</p>
+          </div>
+        </div>
+
+        <div class="panel stats-panel">
+          <h2>Resumen</h2>
+          <div class="stat-grid">
+            <div>
+              <span>En fila</span>
+              <strong id="queued-count">0</strong>
+            </div>
+            <div>
+              <span>Activo</span>
+              <strong id="active-count">0</strong>
+            </div>
+            <div>
+              <span>Completados</span>
+              <strong id="completed-count">0</strong>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2>Crear ticket</h2>
+          <form id="ticket-form">
+            <label>
+              Cliente
+              <input type="text" id="customer-name" placeholder="Ej: Ana García" required />
+            </label>
+            <label>
+              Servicio
+              <input type="text" id="service-name" placeholder="Ej: Soporte técnico" />
+            </label>
+            <label>
+              Notas
+              <textarea id="ticket-notes" rows="3" placeholder="Detalles opcionales"></textarea>
+            </label>
+            <button type="submit">Agregar ticket</button>
+          </form>
+        </div>
+
+        <div class="panel actions-panel">
+          <h2>Acciones rápidas</h2>
+          <div class="quick-actions">
+            <button type="button" data-action="next">Atender siguiente</button>
+            <button type="button" data-action="status">Ver cola</button>
+            <button type="button" data-action="requeue">Reencolar activo</button>
+          </div>
+        </div>
+      </aside>
+
+      <main class="chat-panel">
+        <header class="chat-header">
+          <div>
+            <p class="eyebrow">Asistente</p>
+            <h2>Chatbot de atención</h2>
+          </div>
+        </header>
+
+        <div id="chat-log" class="chat-log">
+          <div class="message bot">
+            <span>Hola, soy el bot de colas FIFO. Puedes pedirme: “nuevo ticket para Ana por soporte”, “siguiente”, “estado”, o “cerrar #12”.</span>
+          </div>
+        </div>
+
+        <form id="chat-form" class="chat-form">
+          <input id="chat-input" type="text" placeholder="Escribe un comando o solicitud..." autocomplete="off" />
+          <button type="submit">Enviar</button>
+        </form>
+      </main>
+    </div>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

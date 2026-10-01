@@ -1,0 +1,206 @@
+:root {
+  --bg: #0b1020;
+  --bg-soft: #121a2b;
+  --panel: #172235;
+  --panel-alt: #1d2d45;
+  --primary: #5eead4;
+  --accent: #7dd3fc;
+  --text: #e2e8f0;
+  --muted: #94a3b8;
+  --success: #86efac;
+  --warning: #fcd34d;
+  --shadow: rgba(15, 23, 42, 0.35);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: linear-gradient(135deg, #0b1020, #111827);
+  color: var(--text);
+}
+
+button, input, textarea {
+  font: inherit;
+}
+
+.app-shell {
+  display: grid;
+  grid-template-columns: 360px 1fr;
+  gap: 24px;
+  min-height: 100vh;
+  padding: 24px;
+}
+
+.sidebar, .chat-panel {
+  background: rgba(15, 23, 42, 0.78);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  box-shadow: 0 18px 40px var(--shadow);
+  border-radius: 22px;
+  backdrop-filter: blur(10px);
+}
+
+.sidebar { padding: 20px; }
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 20px;
+}
+
+.brand-mark {
+  width: 50px;
+  height: 50px;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  background: linear-gradient(135deg, var(--primary), var(--accent));
+  color: #062a2b;
+  font-weight: 800;
+  font-size: 1.5rem;
+}
+
+.brand h1, .brand p { margin: 0; }
+.brand p { color: var(--muted); font-size: 0.85rem; }
+
+.panel {
+  background: rgba(23, 34, 53, 0.9);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 18px;
+  padding: 16px;
+  margin-bottom: 18px;
+}
+
+.panel h2 { margin: 0 0 12px; font-size: 1rem; }
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.stat-grid div {
+  background: rgba(148, 163, 184, 0.06);
+  border-radius: 12px;
+  padding: 12px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: center;
+}
+
+.stat-grid span { color: var(--muted); font-size: 0.78rem; }
+.stat-grid strong { font-size: 1.2rem; }
+
+label {
+  display: block;
+  margin-bottom: 12px;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+input, textarea {
+  width: 100%;
+  margin-top: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(15, 23, 42, 0.8);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+button {
+  width: 100%;
+  border: none;
+  border-radius: 10px;
+  padding: 11px 14px;
+  cursor: pointer;
+  background: linear-gradient(135deg, var(--primary), var(--accent));
+  color: #062a2b;
+  font-weight: 700;
+  transition: transform 0.15s ease, filter 0.15s ease;
+}
+
+button:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.05);
+}
+
+.quick-actions {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+.chat-panel {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.chat-header {
+  padding: 18px 22px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+  background: rgba(15, 23, 42, 0.6);
+}
+
+.chat-header h2, .eyebrow { margin: 0; }
+.eyebrow {
+  color: var(--primary);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 0.72rem;
+  margin-bottom: 8px;
+}
+
+.chat-log {
+  flex: 1;
+  padding: 20px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.message {
+  max-width: 80%;
+  border-radius: 16px;
+  padding: 12px 14px;
+  line-height: 1.5;
+  white-space: pre-line;
+}
+
+.message.bot {
+  background: rgba(96, 165, 250, 0.12);
+  border: 1px solid rgba(96, 165, 250, 0.2);
+}
+
+.message.user {
+  align-self: flex-end;
+  background: linear-gradient(135deg, rgba(45, 212, 191, 0.2), rgba(125, 211, 252, 0.2));
+  border: 1px solid rgba(94, 234, 212, 0.2);
+}
+
+.chat-form {
+  display: flex;
+  gap: 12px;
+  padding: 16px 18px 20px;
+  border-top: 1px solid rgba(148, 163, 184, 0.18);
+  background: rgba(15, 23, 42, 0.75);
+}
+
+.chat-form input { flex: 1; margin-top: 0; }
+.chat-form button { width: 140px; }
+
+@media (max-width: 920px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+    padding: 16px;
+  }
+
+  .sidebar { order: 2; }
+  .chat-panel { min-height: 580px; }
+}

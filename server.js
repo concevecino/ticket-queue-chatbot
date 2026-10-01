@@ -8,19 +8,16 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
 const state = {
-  queue: [],
+  queues: {},
   history: [],
-  activeTicket: null,
+  activeTickets: {},
   nextTicketId: 1,
+  services: ['Soporte técnico', 'Facturación', 'Consultas generales', 'Devoluciones'],
 };
-
-function summarizeTicket(ticket) {
-  return `#${ticket.id} · ${ticket.customerName} · ${ticket.service}`;
-}
 
 function makeTicket({ customerName, service, notes }) {
   const customer = (customerName || 'Cliente').trim();
-  const issue = (service || 'Atención general').trim();
+  const issue = (service || 'Consultas generales').trim();
   const details = (notes || '').trim();
 
   return {
@@ -28,10 +25,23 @@ function makeTicket({ customerName, service, notes }) {
     customerName: customer,
     service: issue,
     notes: details,
-    status: 'waiting',
+    status: 'initial',
     createdAt: new Date().toISOString(),
     attendedAt: null,
   };
+}
+
+function ensureQueueExists(service) {
+  if (!state.queues[service]) {
+    state.queues[service] = [];
+  }
+  if (!state.activeTickets[service]) {
+    state.activeTickets[service] = null;
+  }
+}
+
+function summarizeTicket(ticket) {
+  return `#${ticket.id} · ${ticket.customerName} · ${ticket.service}`;
 }
 
 function pushHistory(type, message, ticket = null) {
@@ -45,16 +55,33 @@ function pushHistory(type, message, ticket = null) {
 }
 
 function getSnapshot() {
-  return {
-    queue: state.queue,
-    activeTicket: state.activeTicket,
+  const snapshot = {
+    queues: {},
+    activeTickets: {},
     history: state.history.slice(-10),
     metrics: {
-      queued: state.queue.length,
-      active: state.activeTicket ? 1 : 0,
-      completed: state.history.filter((item) => item.type === 'closed').length,
+      totalQueued: 0,
+      totalActive: 0,
+      totalCompleted: state.history.filter((item) => item.type === 'closed').length,
+      byService: {},
     },
+    services: state.services,
   };
+
+  for (const service of state.services) {
+    ensureQueueExists(service);
+    snapshot.queues[service] = state.queues[service];
+    snapshot.activeTickets[service] = state.activeTickets[service];
+
+    snapshot.metrics.byService[service] = {
+      queued: state.queues[service].length,
+      active: state.activeTickets[service] ? 1 : 0,
+    };
+    snapshot.metrics.totalQueued += state.queues[service].length;
+    snapshot.metrics.totalActive += state.activeTickets[service] ? 1 : 0;
+  }
+
+  return snapshot;
 }
 
 app.get('/api/health', (req, res) => {
@@ -75,37 +102,42 @@ app.post('/api/tickets', (req, res) => {
     });
   }
 
-  const ticket = makeTicket({ customerName, service, notes });
-  state.queue.push(ticket);
-  pushHistory('created', `Ticket ${summarizeTicket(ticket)} agregado a la cola.`, ticket);
+  const normalizedService = (service && service.trim()) || 'Consultas generales';
+  const ticket = makeTicket({ customerName, service: normalizedService, notes });
+  ensureQueueExists(ticket.service);
+  state.queues[ticket.service].push(ticket);
+  pushHistory('created', `Ticket ${summarizeTicket(ticket)} agregado a la cola de ${ticket.service}.`, ticket);
 
   res.status(201).json({
     ok: true,
-    message: `Ticket #${ticket.id} creado para ${ticket.customerName}.`,
+    message: `✅ Ticket #${ticket.id} creado para ${ticket.customerName} en ${ticket.service}. Estado: inicial.`,
     ticket,
     state: getSnapshot(),
   });
 });
 
-app.post('/api/tickets/next', (req, res) => {
-  if (state.queue.length === 0) {
+app.post('/api/tickets/next/:service', (req, res) => {
+  const service = decodeURIComponent(req.params.service);
+  ensureQueueExists(service);
+
+  if (state.queues[service].length === 0) {
     return res.status(400).json({
       ok: false,
-      message: 'La cola está vacía. No hay tickets pendientes.',
+      message: `La cola de ${service} está vacía. No hay tickets pendientes.`,
       state: getSnapshot(),
     });
   }
 
-  const ticket = state.queue.shift();
-  ticket.status = 'in_service';
+  const ticket = state.queues[service].shift();
+  ticket.status = 'processed';
   ticket.attendedAt = new Date().toISOString();
-  state.activeTicket = ticket;
+  state.activeTickets[service] = ticket;
 
-  pushHistory('served', `Se está atendiendo a ${ticket.customerName} en ${ticket.service}.`, ticket);
+  pushHistory('served', `Ticket #${ticket.id} pasó a estado procesado en ${service}.`, ticket);
 
   res.json({
     ok: true,
-    message: `Ahora atiendo a ${ticket.customerName} en ${ticket.service}.`,
+    message: `⏳ Ticket #${ticket.id} de ${ticket.customerName} está ahora en estado procesado para ${service}.`,
     ticket,
     state: getSnapshot(),
   });
@@ -113,8 +145,16 @@ app.post('/api/tickets/next', (req, res) => {
 
 app.post('/api/tickets/:id/requeue', (req, res) => {
   const id = Number(req.params.id);
+  let foundService = null;
 
-  if (!state.activeTicket || state.activeTicket.id !== id) {
+  for (const service of state.services) {
+    if (state.activeTickets[service] && state.activeTickets[service].id === id) {
+      foundService = service;
+      break;
+    }
+  }
+
+  if (!foundService) {
     return res.status(400).json({
       ok: false,
       message: 'No hay un ticket activo para reencolar.',
@@ -122,14 +162,14 @@ app.post('/api/tickets/:id/requeue', (req, res) => {
     });
   }
 
-  const ticket = { ...state.activeTicket, status: 'waiting' };
-  state.activeTicket = null;
-  state.queue.push(ticket);
-  pushHistory('requeued', `Ticket #${ticket.id} reencolado al final de la fila.`, ticket);
+  const ticket = { ...state.activeTickets[foundService], status: 'initial' };
+  state.activeTickets[foundService] = null;
+  state.queues[foundService].push(ticket);
+  pushHistory('requeued', `Ticket #${ticket.id} regresó al estado inicial y fue reencolado en ${foundService}.`, ticket);
 
   res.json({
     ok: true,
-    message: `El ticket #${ticket.id} fue reencolado al final.`,
+    message: `↩️  El ticket #${ticket.id} regresó a inicial y fue reencolado al final de ${foundService}.`,
     ticket,
     state: getSnapshot(),
   });
@@ -137,16 +177,22 @@ app.post('/api/tickets/:id/requeue', (req, res) => {
 
 app.post('/api/tickets/:id/close', (req, res) => {
   const id = Number(req.params.id);
-
   let ticket = null;
+  let foundService = null;
 
-  if (state.activeTicket && state.activeTicket.id === id) {
-    ticket = state.activeTicket;
-    state.activeTicket = null;
-  } else {
-    const index = state.queue.findIndex((item) => item.id === id);
+  for (const service of state.services) {
+    if (state.activeTickets[service] && state.activeTickets[service].id === id) {
+      ticket = state.activeTickets[service];
+      state.activeTickets[service] = null;
+      foundService = service;
+      break;
+    }
+
+    const index = state.queues[service].findIndex((item) => item.id === id);
     if (index >= 0) {
-      ticket = state.queue.splice(index, 1)[0];
+      ticket = state.queues[service].splice(index, 1)[0];
+      foundService = service;
+      break;
     }
   }
 
@@ -159,11 +205,11 @@ app.post('/api/tickets/:id/close', (req, res) => {
   }
 
   ticket.status = 'closed';
-  pushHistory('closed', `Ticket #${ticket.id} cerrado.`, ticket);
+  pushHistory('closed', `Ticket #${ticket.id} cerrado en ${foundService}.`, ticket);
 
   res.json({
     ok: true,
-    message: `Ticket #${ticket.id} cerrado con éxito.`,
+    message: `✅ Ticket #${ticket.id} cerrado con éxito en ${foundService}.`,
     ticket,
     state: getSnapshot(),
   });
@@ -175,12 +221,26 @@ function parseTicketRequest(message) {
 
   if (!msg) return { action: 'help' };
 
+  if (/(estado|fila|cola|status|mostrar).*(soporte|facturación|consulta|devolución)/.test(lower)) {
+    let service = null;
+    if (/soporte/.test(lower)) service = 'Soporte técnico';
+    else if (/factur/.test(lower)) service = 'Facturación';
+    else if (/consulta/.test(lower)) service = 'Consultas generales';
+    else if (/devol/.test(lower)) service = 'Devoluciones';
+    return { action: 'status', service };
+  }
+
   if (/(cola|fila|estado|mostrar|lista|status)/.test(lower)) {
     return { action: 'status' };
   }
 
   if (/(siguiente|atender|llamar|next|servir)/.test(lower)) {
-    return { action: 'next' };
+    let service = null;
+    if (/soporte/.test(lower)) service = 'Soporte técnico';
+    else if (/factur/.test(lower)) service = 'Facturación';
+    else if (/consulta/.test(lower)) service = 'Consultas generales';
+    else if (/devol/.test(lower)) service = 'Devoluciones';
+    return { action: 'next', service };
   }
 
   if (/(reencolar|requeue|volver a la cola|retroceder)/.test(lower)) {
@@ -192,22 +252,23 @@ function parseTicketRequest(message) {
     return { action: 'close', ticketId: match ? Number(match[1]) : null };
   }
 
-  if (/(ayuda|help|menu|comandos)/.test(lower)) {
+  if (/(ayuda|help|menu|comandos|servicios)/.test(lower)) {
     return { action: 'help' };
   }
 
-  if (/(nuevo|crear|agregar|añadir|registrar)/.test(lower) || /(ticket|cliente|persona)/.test(lower)) {
+  if (/(nuevo|crear|agregar|añadir|registrar)/.test(lower) || /(ticket|cliente)/.test(lower)) {
     let customerName = 'Cliente';
-    let service = 'Atención general';
+    let service = 'Consultas generales';
 
-    const nameMatch = msg.match(/(?:para|de|cliente|persona)\s+([A-Za-zÀ-ÿ0-9\s]+?)(?:\s+(?:por|servicio|tema|asunto|porque)\s+(.+)|$)/i);
+    if (/soporte/.test(lower)) service = 'Soporte técnico';
+    else if (/factur/.test(lower)) service = 'Facturación';
+    else if (/devol/.test(lower)) service = 'Devoluciones';
+    else if (/consulta/.test(lower)) service = 'Consultas generales';
+
+    const nameMatch = msg.match(/(?:para|de|cliente|persona)\s+([A-Za-zÀ-ÿ0-9\s]+?)(?:\s+|$)/i);
     if (nameMatch) {
       customerName = (nameMatch[1] || 'Cliente').trim();
-      if (nameMatch[2]) service = nameMatch[2].trim();
     }
-
-    const explicitService = msg.match(/(?:por|servicio|tema|asunto)\s+(.+)$/i);
-    if (explicitService) service = explicitService[1].trim();
 
     return { action: 'create', customerName, service };
   }
@@ -230,41 +291,76 @@ app.post('/api/chat', (req, res) => {
 
   if (intent.action === 'status') {
     const snapshot = getSnapshot();
-    const queueText = snapshot.queue.length
-      ? snapshot.queue.map((ticket) => `#${ticket.id} · ${ticket.customerName} · ${ticket.service}`).join('\n')
-      : 'Sin tickets pendientes.';
+
+    if (intent.service) {
+      const queue = snapshot.queues[intent.service] || [];
+      const active = snapshot.activeTickets[intent.service];
+      const queueText = queue.length
+        ? queue.map((t) => `#${t.id} · ${t.customerName} · ${t.status}`).join('\n')
+        : 'Sin tickets pendientes.';
+      const activeText = active ? `#${active.id} · ${active.customerName} · ${active.status}` : 'Ninguno';
+
+      return res.json({
+        ok: true,
+        message: `Estado de ${intent.service}:\n${queueText}\n\nProcesado: ${activeText}`,
+        state: snapshot,
+      });
+    }
+
+    const allQueues = state.services.map((svc) => {
+      const queue = snapshot.queues[svc] || [];
+      const active = snapshot.activeTickets[svc];
+      return `${svc}: ${queue.length} en fila${active ? `, procesando #${active.id}` : ''}`;
+    }).join('\n');
 
     return res.json({
       ok: true,
-      message: `Estado de la fila:\n${queueText}\n\nTicket activo: ${snapshot.activeTicket ? `#${snapshot.activeTicket.id} · ${snapshot.activeTicket.customerName}` : 'Ninguno'}`,
+      message: `Estado general:\n${allQueues}`,
       state: snapshot,
     });
   }
 
   if (intent.action === 'next') {
-    if (state.queue.length === 0) {
+    if (!intent.service) {
       return res.status(400).json({
         ok: false,
-        message: 'La cola está vacía. No hay ticket para atender.',
+        message: 'Indica qué servicio: "siguiente Soporte", "siguiente Facturación", etc.',
         state: getSnapshot(),
       });
     }
 
-    const ticket = state.queue.shift();
-    ticket.status = 'in_service';
+    ensureQueueExists(intent.service);
+    if (state.queues[intent.service].length === 0) {
+      return res.status(400).json({
+        ok: false,
+        message: `La cola de ${intent.service} está vacía.`,
+        state: getSnapshot(),
+      });
+    }
+
+    const ticket = state.queues[intent.service].shift();
+    ticket.status = 'processed';
     ticket.attendedAt = new Date().toISOString();
-    state.activeTicket = ticket;
-    pushHistory('served', `Se atendió a ${ticket.customerName}.`, ticket);
+    state.activeTickets[intent.service] = ticket;
+    pushHistory('served', `Ticket #${ticket.id} pasó a procesado en ${intent.service}.`, ticket);
 
     return res.json({
       ok: true,
-      message: `Ahora atiendo a ${ticket.customerName} en ${ticket.service}.`,
+      message: `⏳ Ticket #${ticket.id} de ${ticket.customerName} pasó a estado procesado en ${intent.service}.`,
       state: getSnapshot(),
     });
   }
 
   if (intent.action === 'requeue') {
-    if (!state.activeTicket) {
+    let foundService = null;
+    for (const svc of state.services) {
+      if (state.activeTickets[svc]) {
+        foundService = svc;
+        break;
+      }
+    }
+
+    if (!foundService) {
       return res.status(400).json({
         ok: false,
         message: 'No hay ningún ticket activo para reencolar.',
@@ -272,14 +368,14 @@ app.post('/api/chat', (req, res) => {
       });
     }
 
-    const ticket = { ...state.activeTicket, status: 'waiting' };
-    state.activeTicket = null;
-    state.queue.push(ticket);
-    pushHistory('requeued', `Ticket #${ticket.id} reencolado al final.`, ticket);
+    const ticket = { ...state.activeTickets[foundService], status: 'initial' };
+    state.activeTickets[foundService] = null;
+    state.queues[foundService].push(ticket);
+    pushHistory('requeued', `Ticket #${ticket.id} volvió a inicial y se reencoló en ${foundService}.`, ticket);
 
     return res.json({
       ok: true,
-      message: `El ticket #${ticket.id} fue reencolado al final de la fila.`,
+      message: `↩️  El ticket #${ticket.id} volvió a inicial y fue reencolado al final de ${foundService}.`,
       state: getSnapshot(),
     });
   }
@@ -295,12 +391,22 @@ app.post('/api/chat', (req, res) => {
     }
 
     let ticket = null;
-    if (state.activeTicket && state.activeTicket.id === ticketId) {
-      ticket = state.activeTicket;
-      state.activeTicket = null;
-    } else {
-      const idx = state.queue.findIndex((item) => item.id === ticketId);
-      if (idx >= 0) ticket = state.queue.splice(idx, 1)[0];
+    let foundService = null;
+
+    for (const svc of state.services) {
+      if (state.activeTickets[svc] && state.activeTickets[svc].id === ticketId) {
+        ticket = state.activeTickets[svc];
+        state.activeTickets[svc] = null;
+        foundService = svc;
+        break;
+      }
+
+      const idx = state.queues[svc].findIndex((item) => item.id === ticketId);
+      if (idx >= 0) {
+        ticket = state.queues[svc].splice(idx, 1)[0];
+        foundService = svc;
+        break;
+      }
     }
 
     if (!ticket) {
@@ -312,11 +418,11 @@ app.post('/api/chat', (req, res) => {
     }
 
     ticket.status = 'closed';
-    pushHistory('closed', `Ticket #${ticket.id} cerrado.`, ticket);
+    pushHistory('closed', `Ticket #${ticket.id} quedó cerrado en ${foundService}.`, ticket);
 
     return res.json({
       ok: true,
-      message: `Ticket #${ticket.id} cerrado con éxito.`,
+      message: `✅ Ticket #${ticket.id} cerrado con éxito en ${foundService}.`,
       state: getSnapshot(),
     });
   }
@@ -326,19 +432,20 @@ app.post('/api/chat', (req, res) => {
       customerName: intent.customerName,
       service: intent.service,
     });
-    state.queue.push(ticket);
-    pushHistory('created', `Ticket #${ticket.id} creado.`, ticket);
+    ensureQueueExists(ticket.service);
+    state.queues[ticket.service].push(ticket);
+    pushHistory('created', `Ticket #${ticket.id} creado en ${ticket.service}.`, ticket);
 
     return res.json({
       ok: true,
-      message: `Ticket #${ticket.id} creado para ${ticket.customerName}. Servicio: ${ticket.service}.`,
+      message: `✅ Ticket #${ticket.id} creado para ${ticket.customerName} en ${ticket.service}. Estado: inicial.`,
       state: getSnapshot(),
     });
   }
 
   return res.json({
     ok: true,
-    message: 'Comandos disponibles:\n- Nuevo ticket para Ana por soporte\n- Siguiente\n- Estado\n- Cerrar #12\n- Reencolar\n- Ayuda',
+    message: 'Comandos:\n- Nuevo ticket para Ana por soporte\n- Siguiente Soporte\n- Estado Facturación\n- Cerrar #12\n- El ciclo es: inicial → procesado → cerrado',
     state: getSnapshot(),
   });
 });
